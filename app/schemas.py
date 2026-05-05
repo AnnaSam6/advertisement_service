@@ -1,5 +1,4 @@
 from pydantic import BaseModel
-from typing import Optional
 from datetime import datetime
 
 class AdvertisementResponse(BaseModel):
@@ -12,10 +11,3 @@ class AdvertisementResponse(BaseModel):
 
     class Config:
         from_attributes = True
-
-class AdvertisementSearchParams(BaseModel):
-    title: Optional[str] = None
-    description: Optional[str] = None
-    price_min: Optional[float] = None
-    price_max: Optional[float] = None
-    author: Optional[str] = None
