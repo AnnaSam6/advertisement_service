@@ -1,25 +1,23 @@
 import databases
 import sqlalchemy
-from sqlalchemy import create_engine, MetaData
 
 DATABASE_URL = "sqlite:///./advertisements.db"
 
 database = databases.Database(DATABASE_URL)
-metadata = MetaData()
-
-engine = create_engine(
-    DATABASE_URL, connect_args={"check_same_thread": False}
-)
+metadata = sqlalchemy.MetaData()
 
 advertisements = sqlalchemy.Table(
     "advertisements",
     metadata,
-    sqlalchemy.Column("id", sqlalchemy.Integer, primary_key=True, index=True),
-    sqlalchemy.Column("title", sqlalchemy.String(100), index=True),
-    sqlalchemy.Column("description", sqlalchemy.String(1000)),
-    sqlalchemy.Column("price", sqlalchemy.Float),
-    sqlalchemy.Column("author", sqlalchemy.String(100), index=True),
-    sqlalchemy.Column("created_at", sqlalchemy.DateTime),
+    sqlalchemy.Column("id", sqlalchemy.Integer, primary_key=True, autoincrement=True),
+    sqlalchemy.Column("title", sqlalchemy.String(100), nullable=False),
+    sqlalchemy.Column("description", sqlalchemy.String(1000), nullable=False),
+    sqlalchemy.Column("price", sqlalchemy.Float, nullable=False),
+    sqlalchemy.Column("author", sqlalchemy.String(100), nullable=False),
+    sqlalchemy.Column("created_at", sqlalchemy.DateTime, nullable=False),
 )
 
+engine = sqlalchemy.create_engine(
+    DATABASE_URL, connect_args={"check_same_thread": False}
+)
 metadata.create_all(engine)
