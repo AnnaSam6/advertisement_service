@@ -1,28 +1,18 @@
-from pydantic import BaseModel, Field
-from typing import Optional
-from datetime import datetime
+# В данном проекте используется Table из database.py
+# Этот файл оставлен для будущего расширения (если перейдёте на ORM модели)
 
-class AdvertisementBase(BaseModel):
-    title: str = Field(..., min_length=1, max_length=100, description="Заголовок объявления")
-    description: str = Field(..., min_length=1, max_length=1000, description="Описание")
-    price: float = Field(..., gt=0, description="Цена (должна быть больше 0)")
-    author: str = Field(..., min_length=1, max_length=100, description="Автор объявления")
+from sqlalchemy import Column, Integer, String, Float, DateTime
+from sqlalchemy.ext.declarative import declarative_base
 
-class AdvertisementCreate(AdvertisementBase):
-    """Схема для создания объявления"""
-    pass
+Base = declarative_base()
 
-class AdvertisementUpdate(BaseModel):
-    """Схема для обновления (все поля опциональны)"""
-    title: Optional[str] = Field(None, min_length=1, max_length=100)
-    description: Optional[str] = Field(None, min_length=1, max_length=1000)
-    price: Optional[float] = Field(None, gt=0)
-    author: Optional[str] = Field(None, min_length=1, max_length=100)
-
-class AdvertisementInDB(AdvertisementBase):
-    """Полная модель объявления из БД"""
-    id: int
-    created_at: datetime
-
-    class Config:
-        from_attributes = True
+class Advertisement(Base):
+    """ORM модель объявления (опционально)"""
+    __tablename__ = "advertisements"
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    title = Column(String(100), nullable=False)
+    description = Column(String(1000), nullable=False)
+    price = Column(Float, nullable=False)
+    author = Column(String(100), nullable=False)
+    created_at = Column(DateTime, nullable=False)
