@@ -1,5 +1,3 @@
-# В данном проекте используется Table из database.py
-# Этот файл оставлен для будущего расширения (если перейдёте на ORM модели)
 
 from sqlalchemy import Column, Integer, String, Float, DateTime
 from sqlalchemy.ext.declarative import declarative_base
