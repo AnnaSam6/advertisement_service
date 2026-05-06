@@ -1,12 +1,13 @@
 version: '3.8'
 
 services:
-  advertisement-service:
+  api:
     build: .
+    container_name: advertisement-api
     ports:
       - "8000:8000"
     volumes:
       - ./data:/app/data
     environment:
-      - DATABASE_URL=sqlite:///./data/advertisements.db
+      - PYTHONUNBUFFERED=1
     restart: unless-stopped
