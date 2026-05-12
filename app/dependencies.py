@@ -37,7 +37,7 @@ async def get_current_user(
 async def get_optional_user(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)
 ) -> Optional[dict]:
-    """Получение пользователя (опционально)"""
+    """Получение пользователя (опционально, без ошибок)"""
     if credentials is None:
         return None
     
@@ -45,25 +45,3 @@ async def get_optional_user(
         return await get_current_user(credentials)
     except HTTPException:
         return None
-
-def check_user_access(current_user: Optional[dict], required_group: str = "user"):
-    """Проверка прав доступа"""
-    if current_user is None:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Authentication required"
-        )
-    
-    if current_user["group"] != "admin" and current_user["group"] != required_group:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Insufficient permissions"
-        )
-
-def check_admin_access(current_user: Optional[dict]):
-    """Проверка прав администратора"""
-    if current_user is None or current_user["group"] != "admin":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Admin access required"
-        )
