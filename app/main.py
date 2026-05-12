@@ -13,7 +13,7 @@ from .dependencies import get_current_user, get_optional_user
 
 app = FastAPI(
     title="Advertisement Service API",
-    version="2.0.0",
+    version="2.0.1",
     description="REST API с аутентификацией и авторизацией"
 )
 
@@ -37,6 +37,7 @@ async def login(user_login: UserLogin):
     - **username**: Имя пользователя
     - **password**: Пароль
     - Возвращает JWT токен (действителен 48 часов)
+    - Ошибка 401 при неверных данных
     """
     query = users.select().where(users.c.username == user_login.username)
     user = await database.fetch_one(query)
@@ -92,8 +93,45 @@ async def create_user(user: UserCreate):
         created_at=current_time.isoformat()
     )
 
+@app.get("/user", response_model=List[UserResponse], tags=["Пользователи"])
+async def get_all_users(
+    current_user: Optional[dict] = Depends(get_current_user)
+):
+    """
+    Получение списка всех пользователей.
+    
+    Доступно только администраторам (group=admin).
+    Требуется авторизация.
+    """
+    # Проверка авторизации
+    if current_user is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required"
+        )
+    
+    # Проверка прав администратора
+    if current_user["group"] != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only administrators can view all users"
+        )
+    
+    query = users.select()
+    all_users = await database.fetch_all(query)
+    
+    return [
+        UserResponse(
+            id=user["id"],
+            username=user["username"],
+            group=user["group"],
+            created_at=user["created_at"].isoformat()
+        )
+        for user in all_users
+    ]
+
 @app.get("/user/{user_id}", response_model=UserResponse, tags=["Пользователи"])
-async def get_user(user_id: int):
+async def get_user_by_id(user_id: int):
     """
     Получение пользователя по ID.
     
@@ -124,8 +162,11 @@ async def update_user(
     """
     Обновление пользователя.
     
-    - Пользователи с группой user могут обновлять только свои данные
+    Права доступа:
+    - Пользователи с группой user могут обновлять ТОЛЬКО свои данные
+    - Только администраторы могут менять группу пользователя
     - Администраторы могут обновлять любых пользователей
+    - Ошибка 403 при недостатке прав
     """
     # Проверка существования пользователя
     query = users.select().where(users.c.id == user_id)
@@ -137,14 +178,14 @@ async def update_user(
             detail=f"User with id={user_id} not found"
         )
     
-    # Проверка прав
+    # Проверка авторизации
     if current_user is None:
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
+            status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Authentication required"
         )
     
-    # Проверка: админ или владелец
+    # Проверка: админ или владелец профиля
     if current_user["group"] != "admin" and current_user["id"] != user_id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -154,22 +195,30 @@ async def update_user(
     # Подготовка данных для обновления
     update_data = user_update.model_dump(exclude_unset=True)
     
+    # КРИТИЧЕСКАЯ ПРОВЕРКА: только админ может менять группу
+    if "group" in update_data:
+        if current_user["group"] != "admin":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only administrators can change user group"
+            )
+        # Проверка допустимых значений группы
+        if update_data["group"] not in ["user", "admin"]:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Group must be 'user' or 'admin'"
+            )
+    
     # Если обновляется пароль - хешируем его
     if "password" in update_data:
         update_data["password_hash"] = get_password_hash(update_data.pop("password"))
     
-    # Обычный пользователь не может менять группу
-    if "group" in update_data and current_user["group"] != "admin":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only admins can change user group"
-        )
-    
+    # Применяем обновления
     if update_data:
         query = users.update().where(users.c.id == user_id).values(**update_data)
         await database.execute(query)
     
-    # Получение обновленных данных
+    # Получаем обновленные данные
     query = users.select().where(users.c.id == user_id)
     updated_user = await database.fetch_one(query)
     
@@ -188,8 +237,10 @@ async def delete_user(
     """
     Удаление пользователя.
     
+    Права доступа:
     - Пользователи с группой user могут удалить только себя
     - Администраторы могут удалить любого пользователя
+    - Ошибка 403 при недостатке прав
     """
     # Проверка существования
     query = users.select().where(users.c.id == user_id)
@@ -201,13 +252,14 @@ async def delete_user(
             detail=f"User with id={user_id} not found"
         )
     
-    # Проверка прав
+    # Проверка авторизации
     if current_user is None:
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
+            status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Authentication required"
         )
     
+    # Проверка прав: админ или владелец
     if current_user["group"] != "admin" and current_user["id"] != user_id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -229,7 +281,8 @@ async def create_advertisement(
     """
     Создание объявления.
     
-    - Только для авторизованных пользователей (группы user или admin)
+    Только для авторизованных пользователей (группы user или admin).
+    Ошибка 403 для неавторизованных.
     """
     if current_user is None:
         raise HTTPException(
@@ -265,7 +318,7 @@ async def get_advertisement(advertisement_id: int):
     """
     Получение объявления по ID.
     
-    Доступно всем.
+    Доступно всем (даже неавторизованным).
     """
     query = advertisements.select().where(advertisements.c.id == advertisement_id)
     ad = await database.fetch_one(query)
@@ -295,8 +348,10 @@ async def update_advertisement(
     """
     Обновление объявления.
     
+    Права доступа:
     - Пользователи могут обновлять только свои объявления
     - Администраторы могут обновлять любые объявления
+    - Ошибка 403 при недостатке прав
     """
     # Проверка существования
     query = advertisements.select().where(advertisements.c.id == advertisement_id)
@@ -308,13 +363,14 @@ async def update_advertisement(
             detail=f"Advertisement with id={advertisement_id} not found"
         )
     
-    # Проверка прав
+    # Проверка авторизации
     if current_user is None:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Authentication required"
         )
     
+    # Проверка прав: админ или владелец объявления
     if current_user["group"] != "admin" and current_user["id"] != existing_ad["user_id"]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -350,8 +406,10 @@ async def delete_advertisement(
     """
     Удаление объявления.
     
+    Права доступа:
     - Пользователи могут удалять только свои объявления
     - Администраторы могут удалять любые объявления
+    - Ошибка 403 при недостатке прав
     """
     query = advertisements.select().where(advertisements.c.id == advertisement_id)
     existing_ad = await database.fetch_one(query)
@@ -381,18 +439,18 @@ async def delete_advertisement(
 
 @app.get("/advertisement", response_model=List[AdvertisementResponse], tags=["Объявления"])
 async def search_advertisements(
-    title: Optional[str] = Query(None),
-    description: Optional[str] = Query(None),
-    price_min: Optional[float] = Query(None, ge=0),
-    price_max: Optional[float] = Query(None, ge=0),
-    author: Optional[str] = Query(None),
-    limit: int = Query(10, ge=1, le=100),
-    offset: int = Query(0, ge=0),
+    title: Optional[str] = Query(None, description="Поиск по заголовку (частичное совпадение)"),
+    description: Optional[str] = Query(None, description="Поиск по описанию (частичное совпадение)"),
+    price_min: Optional[float] = Query(None, ge=0, description="Минимальная цена"),
+    price_max: Optional[float] = Query(None, ge=0, description="Максимальная цена"),
+    author: Optional[str] = Query(None, description="Поиск по автору (частичное совпадение)"),
+    limit: int = Query(10, ge=1, le=100, description="Количество результатов на странице"),
+    offset: int = Query(0, ge=0, description="Смещение для пагинации"),
 ):
     """
     Поиск объявлений с фильтрацией и пагинацией.
     
-    Доступно всем.
+    Доступно всем (даже неавторизованным).
     """
     query = advertisements.select()
     conditions = []
@@ -431,8 +489,10 @@ async def search_advertisements(
 
 @app.get("/", tags=["Служебное"])
 async def root():
+    """Проверка работоспособности API"""
     return {
         "service": "Advertisement API",
-        "version": "2.0.0",
+        "version": "2.0.1",
+        "status": "running",
         "docs": "/docs"
     }
